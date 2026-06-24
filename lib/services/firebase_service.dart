@@ -7,7 +7,8 @@ import '../models/message.dart';
 class FirebaseService {
   bool get isAvailable => Firebase.apps.isNotEmpty;
 
-  FirebaseFirestore? get _firestoreOrNull => isAvailable ? FirebaseFirestore.instance : null;
+  FirebaseFirestore? get _firestoreOrNull =>
+      isAvailable ? FirebaseFirestore.instance : null;
   FirebaseAuth? get _authOrNull => isAvailable ? FirebaseAuth.instance : null;
 
   Stream<List<Contact>> getContacts() {
@@ -19,17 +20,14 @@ class FirebaseService {
     }
 
     return firestore.collection('users').snapshots().map((snapshot) {
-      return snapshot.docs
-          .where((doc) => doc.id != currentUserId)
-          .map((doc) {
-            final data = doc.data();
-            return Contact(
-              id: doc.id,
-              name: data['name'] as String? ?? 'Unknown',
-              meshAddress: data['meshAddress'] as String?,
-            );
-          })
-          .toList();
+      return snapshot.docs.where((doc) => doc.id != currentUserId).map((doc) {
+        final data = doc.data();
+        return Contact(
+          id: doc.id,
+          name: data['name'] as String? ?? 'Unknown',
+          meshAddress: data['meshAddress'] as String?,
+        );
+      }).toList();
     });
   }
 
@@ -66,24 +64,26 @@ class FirebaseService {
         .orderBy('timestamp', descending: true)
         .snapshots()
         .map((snapshot) {
-          return snapshot.docs.map((doc) {
-            final data = doc.data();
-            final sourceName = data['source'] as String? ?? MessageSource.internet.name;
+      return snapshot.docs.map((doc) {
+        final data = doc.data();
+        final sourceName =
+            data['source'] as String? ?? MessageSource.internet.name;
 
-            return Message(
-              id: doc.id,
-              senderId: data['senderId'] as String,
-              recipientId: data['recipientId'] as String,
-              conversationId: data['conversationId'] as String? ?? conversationId,
-              text: data['text'] as String,
-              timestamp: (data['timestamp'] as Timestamp?)?.toDate() ?? DateTime.now(),
-              source: sourceName == MessageSource.ble.name
-                  ? MessageSource.ble
-                  : MessageSource.internet,
-              isMe: data['senderId'] == currentUserId,
-              senderMeshId: data['senderMeshId'] as String?,
-            );
-          }).toList();
-        });
+        return Message(
+          id: doc.id,
+          senderId: data['senderId'] as String,
+          recipientId: data['recipientId'] as String,
+          conversationId: data['conversationId'] as String? ?? conversationId,
+          text: data['text'] as String,
+          timestamp:
+              (data['timestamp'] as Timestamp?)?.toDate() ?? DateTime.now(),
+          source: sourceName == MessageSource.ble.name
+              ? MessageSource.ble
+              : MessageSource.internet,
+          isMe: data['senderId'] == currentUserId,
+          senderMeshId: data['senderMeshId'] as String?,
+        );
+      }).toList();
+    });
   }
 }

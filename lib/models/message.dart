@@ -112,7 +112,8 @@ class MeshMessagePacket {
       conversationId: json['conversationId'] as String,
       encryptedText: json['encryptedText'] as String,
       hopCount: json['hopCount'] as int? ?? 0,
-      sentAt: DateTime.tryParse(json['sentAt'] as String? ?? '') ?? DateTime.now(),
+      sentAt:
+          DateTime.tryParse(json['sentAt'] as String? ?? '') ?? DateTime.now(),
     );
   }
 

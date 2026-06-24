@@ -80,12 +80,14 @@ class BleMeshService extends ChangeNotifier {
     try {
       final permGranted = await _requestPermissions();
       if (!permGranted) {
-        debugPrint('Required permissions are not granted, cannot start P2P discovery');
+        debugPrint(
+            'Required permissions are not granted, cannot start P2P discovery');
         return;
       }
 
       if (!_isInitialized) {
-        await initService(deviceName ?? 'User_${DateTime.now().millisecondsSinceEpoch % 1000}');
+        await initService(deviceName ??
+            'User_${DateTime.now().millisecondsSinceEpoch % 1000}');
       }
 
       if (!_isInitialized || _nearbyService == null) {
@@ -126,7 +128,8 @@ class BleMeshService extends ChangeNotifier {
             String? encodedPacket;
 
             if (data is Map) {
-              encodedPacket = data['message'] as String? ?? data['data'] as String?;
+              encodedPacket =
+                  data['message'] as String? ?? data['data'] as String?;
             } else {
               encodedPacket = data.toString();
             }

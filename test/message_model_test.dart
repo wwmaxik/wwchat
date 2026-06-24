@@ -4,7 +4,8 @@ import 'package:ble_mesh_messenger/models/message.dart';
 
 void main() {
   test('buildConversationId is stable regardless of argument order', () {
-    expect(buildConversationId('alice', 'bob'), buildConversationId('bob', 'alice'));
+    expect(buildConversationId('alice', 'bob'),
+        buildConversationId('bob', 'alice'));
   });
 
   test('mesh packet encode and decode preserves important fields', () {

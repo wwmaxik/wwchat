@@ -26,7 +26,8 @@ class ContactsScreen extends StatelessWidget {
         actions: [
           Switch(
             value: connectivity.isInternetAvailable,
-            onChanged: (val) => connectivity.toggleInternet(val, deviceName: userName),
+            onChanged: (val) =>
+                connectivity.toggleInternet(val, deviceName: userName),
             thumbIcon: WidgetStateProperty.resolveWith<Icon?>((states) {
               if (states.contains(WidgetState.selected)) {
                 return const Icon(Icons.public);
@@ -60,9 +61,12 @@ class ContactsScreen extends StatelessWidget {
                     child: Text(contact.name.characters.first.toUpperCase()),
                   ),
                   title: Text(contact.name),
-                  subtitle: Text('Mesh ID: ${contact.meshAddress ?? 'Unavailable'}'),
+                  subtitle:
+                      Text('Mesh ID: ${contact.meshAddress ?? 'Unavailable'}'),
                   trailing: Icon(
-                    connectivity.isInternetAvailable ? Icons.public : Icons.bluetooth,
+                    connectivity.isInternetAvailable
+                        ? Icons.public
+                        : Icons.bluetooth,
                     size: 18,
                     color: theme.colorScheme.primary,
                   ),

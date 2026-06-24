@@ -3,7 +3,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:ble_mesh_messenger/services/encryption_service.dart';
 
 void main() {
-  test('conversation encryption roundtrip returns original plaintext', () async {
+  test('conversation encryption roundtrip returns original plaintext',
+      () async {
     final service = EncryptionService();
     final key = await service.deriveConversationKey('alice__bob');
     final encrypted = await service.encrypt('hello mesh world', key);

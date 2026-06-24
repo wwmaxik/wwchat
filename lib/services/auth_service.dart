@@ -7,7 +7,8 @@ class AuthService with ChangeNotifier {
   bool get isAvailable => Firebase.apps.isNotEmpty;
 
   FirebaseAuth? get _authOrNull => isAvailable ? FirebaseAuth.instance : null;
-  FirebaseFirestore? get _firestoreOrNull => isAvailable ? FirebaseFirestore.instance : null;
+  FirebaseFirestore? get _firestoreOrNull =>
+      isAvailable ? FirebaseFirestore.instance : null;
 
   User? get currentUser => _authOrNull?.currentUser;
 

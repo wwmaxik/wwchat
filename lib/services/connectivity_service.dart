@@ -9,7 +9,7 @@ enum ConnectivityMode { internet, ble }
 
 class ConnectivityService with ChangeNotifier {
   ConnectivityService({Connectivity? connectivity})
-    : _connectivity = connectivity ?? Connectivity() {
+      : _connectivity = connectivity ?? Connectivity() {
     _init();
   }
 
@@ -34,8 +34,10 @@ class ConnectivityService with ChangeNotifier {
 
   Future<void> _updateFromResults(List<ConnectivityResult> results) async {
     final hadInternet = _isInternetAvailable;
-    _isInternetAvailable = results.any((result) => result != ConnectivityResult.none);
-    _currentMode = _isInternetAvailable ? ConnectivityMode.internet : ConnectivityMode.ble;
+    _isInternetAvailable =
+        results.any((result) => result != ConnectivityResult.none);
+    _currentMode =
+        _isInternetAvailable ? ConnectivityMode.internet : ConnectivityMode.ble;
 
     if (hadInternet == _isInternetAvailable) {
       notifyListeners();

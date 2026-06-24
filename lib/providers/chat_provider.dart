@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_core/firebase_core.dart' hide FirebaseService;
 import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 
@@ -11,9 +11,10 @@ import '../services/encryption_service.dart';
 import '../services/firebase_service.dart';
 
 class ChatProvider with ChangeNotifier {
-  ChatProvider({FirebaseService? firebaseService, EncryptionService? encryptionService})
-    : _firebaseService = firebaseService ?? FirebaseService(),
-      _encryptionService = encryptionService ?? EncryptionService() {
+  ChatProvider(
+      {FirebaseService? firebaseService, EncryptionService? encryptionService})
+      : _firebaseService = firebaseService ?? FirebaseService(),
+        _encryptionService = encryptionService ?? EncryptionService() {
     _init();
   }
 
@@ -32,7 +33,8 @@ class ChatProvider with ChangeNotifier {
   List<Contact> get contacts => _contacts;
 
   Future<void> _init() async {
-    _contactsSubscription = _firebaseService.getContacts().listen((updatedContacts) {
+    _contactsSubscription =
+        _firebaseService.getContacts().listen((updatedContacts) {
       _contacts = updatedContacts;
       notifyListeners();
     });
@@ -52,7 +54,8 @@ class ChatProvider with ChangeNotifier {
     _firestoreMessagesSubscription?.cancel();
     if (contactId == null) return;
 
-    _firestoreMessagesSubscription = _firebaseService.getMessages(contactId).listen((firestoreMsgs) {
+    _firestoreMessagesSubscription =
+        _firebaseService.getMessages(contactId).listen((firestoreMsgs) {
       _mergeMessages(contactId, firestoreMsgs);
     });
   }
@@ -129,8 +132,10 @@ class ChatProvider with ChangeNotifier {
       return;
     }
 
-    final key = await _encryptionService.deriveConversationKey(packet.conversationId);
-    final decryptedText = await _encryptionService.decrypt(packet.encryptedText, key);
+    final key =
+        await _encryptionService.deriveConversationKey(packet.conversationId);
+    final decryptedText =
+        await _encryptionService.decrypt(packet.encryptedText, key);
 
     final message = Message(
       id: packet.id,
@@ -146,7 +151,8 @@ class ChatProvider with ChangeNotifier {
 
     _mergeMessages(packet.senderUserId, [message]);
 
-    if (_activeContactId == packet.senderUserId && _firebaseService.isAvailable) {
+    if (_activeContactId == packet.senderUserId &&
+        _firebaseService.isAvailable) {
       await _firebaseService.sendMessage(
         message.copyWith(
           text: packet.encryptedText,
@@ -157,7 +163,9 @@ class ChatProvider with ChangeNotifier {
   }
 
   void _mergeMessages(String contactId, List<Message> incomingMessages) {
-    final currentMessages = [...(_localMessages[contactId] ?? const <Message>[])];
+    final currentMessages = [
+      ...(_localMessages[contactId] ?? const <Message>[])
+    ];
     final mergedById = <String, Message>{
       for (final message in currentMessages) message.id: message,
     };

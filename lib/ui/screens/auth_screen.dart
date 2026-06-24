@@ -132,18 +132,20 @@ class _AuthScreenState extends State<AuthScreen> {
                           prefixIcon: Icon(Icons.password),
                         ),
                         obscureText: true,
-                        validator: (val) => val != null && val.length >= 6
-                            ? null
-                            : 'Too short',
+                        validator: (val) =>
+                            val != null && val.length >= 6 ? null : 'Too short',
                       ),
                       const SizedBox(height: 24),
                       FilledButton(
-                        onPressed: _isLoading || !authService.isAvailable ? null : _submit,
+                        onPressed: _isLoading || !authService.isAvailable
+                            ? null
+                            : _submit,
                         child: _isLoading
                             ? const SizedBox(
                                 height: 20,
                                 width: 20,
-                                child: CircularProgressIndicator(strokeWidth: 2),
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2),
                               )
                             : Text(_isLogin ? 'Login' : 'Sign up'),
                       ),

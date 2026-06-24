@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_nearby_connections/flutter_nearby_connections.dart' hide Message;
+import 'package:flutter_nearby_connections/flutter_nearby_connections.dart'
+    hide Message;
 import 'package:provider/provider.dart';
 
 import '../../models/message.dart';
@@ -143,13 +144,17 @@ class _ChatScreenState extends State<ChatScreen> {
                   width: 8,
                   height: 8,
                   decoration: BoxDecoration(
-                    color: connectivity.isInternetAvailable ? Colors.green : Colors.orange,
+                    color: connectivity.isInternetAvailable
+                        ? Colors.green
+                        : Colors.orange,
                     shape: BoxShape.circle,
                   ),
                 ),
                 const SizedBox(width: 4),
                 Text(
-                  connectivity.isInternetAvailable ? 'Online sync' : 'Mesh mode',
+                  connectivity.isInternetAvailable
+                      ? 'Online sync'
+                      : 'Mesh mode',
                   style: theme.textTheme.labelSmall,
                 ),
               ],
@@ -191,7 +196,8 @@ class _ChatScreenState extends State<ChatScreen> {
                         borderRadius: BorderRadius.circular(24),
                       ),
                       filled: true,
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+                      contentPadding:
+                          const EdgeInsets.symmetric(horizontal: 16),
                     ),
                     onSubmitted: (_) => _sendMessage(),
                   ),
@@ -226,10 +232,14 @@ class MessageBubble extends StatelessWidget {
         margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
         padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
         decoration: BoxDecoration(
-          color: isMe ? theme.colorScheme.primaryContainer : theme.colorScheme.secondaryContainer,
+          color: isMe
+              ? theme.colorScheme.primaryContainer
+              : theme.colorScheme.secondaryContainer,
           borderRadius: BorderRadius.circular(16).copyWith(
-            bottomRight: isMe ? const Radius.circular(0) : const Radius.circular(16),
-            bottomLeft: !isMe ? const Radius.circular(0) : const Radius.circular(16),
+            bottomRight:
+                isMe ? const Radius.circular(0) : const Radius.circular(16),
+            bottomLeft:
+                !isMe ? const Radius.circular(0) : const Radius.circular(16),
           ),
         ),
         child: Column(
@@ -251,14 +261,18 @@ class MessageBubble extends StatelessWidget {
                 Text(
                   '${message.timestamp.hour}:${message.timestamp.minute.toString().padLeft(2, '0')}',
                   style: theme.textTheme.labelSmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
+                    color: theme.colorScheme.onSurfaceVariant
+                        .withValues(alpha: 0.7),
                   ),
                 ),
                 const SizedBox(width: 4),
                 Icon(
-                  message.source == MessageSource.internet ? Icons.public : Icons.bluetooth,
+                  message.source == MessageSource.internet
+                      ? Icons.public
+                      : Icons.bluetooth,
                   size: 12,
-                  color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
+                  color:
+                      theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
                 ),
               ],
             ),
