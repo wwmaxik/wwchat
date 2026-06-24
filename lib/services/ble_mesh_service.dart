@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
@@ -13,23 +12,24 @@ class BleMeshDevice {
   final String deviceName;
   final BluetoothDevice bluetoothDevice;
   BleMeshConnectionState state;
+  BluetoothCharacteristic? writeCharacteristic;
 
   BleMeshDevice({
     required this.deviceId,
     required this.deviceName,
     required this.bluetoothDevice,
     this.state = BleMeshConnectionState.disconnected,
+    this.writeCharacteristic,
   });
 }
 
 enum BleMeshConnectionState { disconnected, connecting, connected }
 
 class BleMeshService extends ChangeNotifier {
-  BluetoothCharacteristic? _writeCharacteristic;
   final Map<String, BleMeshDevice> _discoveredDevices = {};
   final Set<String> _seenPacketIds = <String>{};
   StreamSubscription<List<ScanResult>>? _scanSubscription;
-  StreamSubscription<List<int>>? _notifySubscription;
+  final Map<String, StreamSubscription<List<int>>> _notifySubscriptions = {};
   bool _isInitialized = false;
   bool _isScanning = false;
   String? _localDeviceId;
@@ -124,14 +124,14 @@ class BleMeshService extends ChangeNotifier {
         (results) {
           for (final result in results) {
             final deviceId = result.device.remoteId.str;
-            final deviceName = result.advertisementData.advName.isNotEmpty
-                ? result.advertisementData.advName
-                : 'Unknown ($deviceId)';
+            final advertisementName = result.advertisementData.advName;
+            final deviceDisplayName =
+                advertisementName.isNotEmpty ? advertisementName : deviceId;
 
             if (!_discoveredDevices.containsKey(deviceId)) {
               _discoveredDevices[deviceId] = BleMeshDevice(
                 deviceId: deviceId,
-                deviceName: deviceName,
+                deviceName: deviceDisplayName,
                 bluetoothDevice: result.device,
               );
               _localDeviceId ??= deviceId;
@@ -167,12 +167,11 @@ class BleMeshService extends ChangeNotifier {
         if (service.uuid.toString() == serviceUuid) {
           for (final characteristic in service.characteristics) {
             if (characteristic.uuid.toString() == characteristicUuid) {
-              _writeCharacteristic = characteristic;
+              meshDevice.writeCharacteristic = characteristic;
 
               if (characteristic.properties.notify) {
                 await characteristic.setNotifyValue(true);
-                _notifySubscription?.cancel();
-                _notifySubscription = characteristic.lastValueStream.listen(
+                final sub = characteristic.lastValueStream.listen(
                   (data) {
                     _handleReceivedData(data);
                   },
@@ -180,6 +179,8 @@ class BleMeshService extends ChangeNotifier {
                     debugPrint('Notify error: $e');
                   },
                 );
+                _notifySubscriptions[meshDevice.deviceId]?.cancel();
+                _notifySubscriptions[meshDevice.deviceId] = sub;
               }
             }
           }
@@ -215,8 +216,11 @@ class BleMeshService extends ChangeNotifier {
     try {
       await _scanSubscription?.cancel();
       _scanSubscription = null;
-      await _notifySubscription?.cancel();
-      _notifySubscription = null;
+
+      for (final sub in _notifySubscriptions.values) {
+        await sub.cancel();
+      }
+      _notifySubscriptions.clear();
 
       await FlutterBluePlus.stopScan();
 
@@ -255,23 +259,15 @@ class BleMeshService extends ChangeNotifier {
   }
 
   Future<void> _broadcastPacket(MeshMessagePacket packet) async {
-    if (_writeCharacteristic == null) {
-      debugPrint('No write characteristic available, cannot send packet');
-      return;
-    }
-
     final encodedPacket = packet.encode();
     final data = utf8.encode(encodedPacket);
     _seenPacketIds.add(packet.id);
 
     for (final device in _discoveredDevices.values) {
-      if (device.state == BleMeshConnectionState.connected) {
+      if (device.state == BleMeshConnectionState.connected &&
+          device.writeCharacteristic != null) {
         try {
-          await device.bluetoothDevice.writeCharacteristic(
-            _writeCharacteristic!.uuid,
-            data,
-            type: CharacteristicWriteType.withResponse,
-          );
+          await device.writeCharacteristic!.write(data);
         } catch (e) {
           debugPrint('Failed to send packet to ${device.deviceId}: $e');
         }
@@ -282,7 +278,10 @@ class BleMeshService extends ChangeNotifier {
   @override
   void dispose() {
     _scanSubscription?.cancel();
-    _notifySubscription?.cancel();
+    for (final sub in _notifySubscriptions.values) {
+      sub.cancel();
+    }
+    _notifySubscriptions.clear();
     FlutterBluePlus.stopScan();
     super.dispose();
   }
