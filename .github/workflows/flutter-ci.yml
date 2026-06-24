@@ -114,6 +114,32 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      - name: Create placeholder google-services.json
+        run: |
+          cat > android/app/google-services.json << 'GSJSON'
+          {
+            "project_info": {
+              "project_number": "000000000000",
+              "firebase_url": "https://placeholder.firebaseio.com",
+              "project_id": "placeholder-project",
+              "storage_bucket": "placeholder-project.appspot.com"
+            },
+            "client": [
+              {
+                "client_info": {
+                  "mobilesdk_app_id": "1:000000000000:android:0000000000000000",
+                  "android_client_info": {
+                    "package_name": "ru.wwmaxik.wwchat"
+                  }
+                },
+                "api_key": [{"current_key": "AIzaSyPlaceholderKeyForCiBuildOnly"}],
+                "services": {}
+              }
+            ],
+            "configuration_version": "1"
+          }
+          GSJSON
+
       - name: Build Android APK (debug-signed)
         run: flutter build apk --debug
 
