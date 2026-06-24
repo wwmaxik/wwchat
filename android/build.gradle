@@ -1,0 +1,62 @@
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+rootProject.buildDir = "../build"
+subprojects {
+    project.buildDir = "${rootProject.buildDir}/${project.name}"
+}
+subprojects {
+    project.evaluationDependsOn(":app")
+}
+
+// 1. Inject namespace early during evaluation to pass AGP validation
+subprojects {
+    plugins.withId("com.android.library") {
+        def android = project.extensions.findByName("android")
+        if (android != null && android.namespace == null) {
+            def defaultNamespace = project.group.toString()
+            if (defaultNamespace == null || defaultNamespace.isEmpty()) {
+                defaultNamespace = "com.example.${project.name.replaceAll(/[^a-zA-Z0-9_]/, '_')}"
+            }
+            android.namespace = defaultNamespace
+            println "Injected namespace '${android.namespace}' into library subproject '${project.name}'"
+        }
+    }
+    plugins.withId("com.android.application") {
+        def android = project.extensions.findByName("android")
+        if (android != null && android.namespace == null) {
+            def defaultNamespace = project.group.toString()
+            if (defaultNamespace == null || defaultNamespace.isEmpty()) {
+                defaultNamespace = "com.example.${project.name.replaceAll(/[^a-zA-Z0-9_]/, '_')}"
+            }
+            android.namespace = defaultNamespace
+            println "Injected namespace '${android.namespace}' into application subproject '${project.name}'"
+        }
+    }
+}
+
+// 2. Align Kotlin jvmTarget late after evaluation is completed
+gradle.projectsEvaluated {
+    subprojects { project ->
+        def android = project.extensions.findByName("android")
+        if (android != null) {
+            def javaTarget = android.compileOptions.targetCompatibility.toString()
+            if (javaTarget == "8") javaTarget = "1.8"
+            
+            project.tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
+                kotlinOptions {
+                    jvmTarget = javaTarget
+                }
+            }
+            println "Aligned Kotlin jvmTarget to '${javaTarget}' for subproject '${project.name}'"
+        }
+    }
+}
+
+tasks.register("clean", Delete) {
+    delete rootProject.buildDir
+}
