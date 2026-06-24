@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_nearby_connections/flutter_nearby_connections.dart'
-    hide Message;
 import 'package:provider/provider.dart';
+
+import '../../services/ble_mesh_service.dart';
 
 import '../../models/message.dart';
 import '../../providers/chat_provider.dart';
@@ -90,10 +90,12 @@ class _ChatScreenState extends State<ChatScreen> {
                           String stateText;
                           Color stateColor;
 
-                          if (device.state == SessionState.connected) {
+                          if (device.state ==
+                              BleMeshConnectionState.connected) {
                             stateText = 'Connected';
                             stateColor = Colors.green;
-                          } else if (device.state == SessionState.connecting) {
+                          } else if (device.state ==
+                              BleMeshConnectionState.connecting) {
                             stateText = 'Connecting...';
                             stateColor = Colors.orange;
                           } else {

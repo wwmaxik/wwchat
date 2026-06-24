@@ -1,25 +1,46 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter_nearby_connections/flutter_nearby_connections.dart';
+import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import '../models/message.dart';
 
+class BleMeshDevice {
+  final String deviceId;
+  final String deviceName;
+  final BluetoothDevice bluetoothDevice;
+  BleMeshConnectionState state;
+
+  BleMeshDevice({
+    required this.deviceId,
+    required this.deviceName,
+    required this.bluetoothDevice,
+    this.state = BleMeshConnectionState.disconnected,
+  });
+}
+
+enum BleMeshConnectionState { disconnected, connecting, connected }
+
 class BleMeshService extends ChangeNotifier {
-  NearbyService? _nearbyService;
-  StreamSubscription? _stateSubscription;
-  StreamSubscription? _dataSubscription;
-  bool _isInitialized = false;
-  bool _isStarting = false;
-  String? _localDeviceId;
+  BluetoothCharacteristic? _writeCharacteristic;
+  final Map<String, BleMeshDevice> _discoveredDevices = {};
   final Set<String> _seenPacketIds = <String>{};
+  StreamSubscription<List<ScanResult>>? _scanSubscription;
+  StreamSubscription<List<int>>? _notifySubscription;
+  bool _isInitialized = false;
+  bool _isScanning = false;
+  String? _localDeviceId;
 
-  final Map<String, Device> _discoveredDevices = {};
-
+  static const String serviceUuid = '0000ff01-0000-1000-8000-00805f9b34fb';
+  static const String characteristicUuid =
+      '0000ff02-0000-1000-8000-00805f9b34fb';
   static const int maxHopCount = 2;
 
-  List<Device> get discoveredDevices => _discoveredDevices.values.toList();
+  List<BleMeshDevice> get discoveredDevices =>
+      _discoveredDevices.values.toList();
   String? get localDeviceId => _localDeviceId;
 
   void Function(MeshMessagePacket packet)? onMessageReceived;
@@ -27,23 +48,19 @@ class BleMeshService extends ChangeNotifier {
   Future<void> initService(String deviceName) async {
     if (_isInitialized) return;
 
-    debugPrint('Initializing NearbyService with name: $deviceName');
+    debugPrint('Initializing BLE Mesh Service');
     try {
-      _nearbyService = NearbyService();
-      await _nearbyService!.init(
-        serviceType: 'wwchat',
-        strategy: Strategy.P2P_CLUSTER,
-        deviceName: deviceName,
-        callback: (isRunning) {
-          debugPrint('NearbyService running state: $isRunning');
-        },
-      );
+      final adapterState = await FlutterBluePlus.adapterState.first;
+      if (adapterState != BluetoothAdapterState.on) {
+        debugPrint('Bluetooth adapter is not on');
+        return;
+      }
+
       _isInitialized = true;
-      debugPrint('NearbyService initialized successfully');
+      debugPrint('BLE Mesh Service initialized successfully');
     } catch (e, stack) {
-      debugPrint('Error initializing NearbyService: $e');
+      debugPrint('Error initializing BLE Mesh Service: $e');
       debugPrint('Stack: $stack');
-      _nearbyService = null;
       _isInitialized = false;
     }
   }
@@ -56,7 +73,6 @@ class BleMeshService extends ChangeNotifier {
         Permission.bluetoothScan,
         Permission.bluetoothAdvertise,
         Permission.bluetoothConnect,
-        Permission.nearbyWifiDevices,
       ].request();
 
       return (statuses[Permission.location]?.isGranted ?? false) &&
@@ -71,17 +87,16 @@ class BleMeshService extends ChangeNotifier {
   }
 
   Future<void> startMeshDiscovery({String? deviceName}) async {
-    if (_isStarting) {
-      debugPrint('Mesh discovery is already starting, skipping...');
+    if (_isScanning) {
+      debugPrint('BLE scanning is already running, skipping...');
       return;
     }
-    _isStarting = true;
+    _isScanning = true;
 
     try {
       final permGranted = await _requestPermissions();
       if (!permGranted) {
-        debugPrint(
-            'Required permissions are not granted, cannot start P2P discovery');
+        debugPrint('Required permissions are not granted, cannot start BLE');
         return;
       }
 
@@ -90,89 +105,128 @@ class BleMeshService extends ChangeNotifier {
             'User_${DateTime.now().millisecondsSinceEpoch % 1000}');
       }
 
-      if (!_isInitialized || _nearbyService == null) {
-        debugPrint('NearbyService failed to initialize, aborting discovery');
+      if (!_isInitialized) {
+        debugPrint('BLE Mesh Service failed to initialize, aborting');
         return;
       }
 
       _discoveredDevices.clear();
       notifyListeners();
 
-      await _stateSubscription?.cancel();
-      await _dataSubscription?.cancel();
+      await _scanSubscription?.cancel();
 
-      _stateSubscription = _nearbyService!.stateChangedSubscription(
-        callback: (devicesList) {
-          for (final device in devicesList) {
-            _discoveredDevices[device.deviceId] = device;
-            _localDeviceId ??= device.deviceId;
+      await FlutterBluePlus.startScan(
+        timeout: const Duration(seconds: 0),
+        androidUsesFineLocation: true,
+      );
 
-            if (device.state == SessionState.notConnected) {
-              try {
-                _nearbyService!.invitePeer(
-                  deviceID: device.deviceId,
-                  deviceName: device.deviceName,
+      _scanSubscription = FlutterBluePlus.scanResults.listen(
+        (results) {
+          for (final result in results) {
+            final deviceId = result.device.remoteId.str;
+            final deviceName = result.advertisementData.advName.isNotEmpty
+                ? result.advertisementData.advName
+                : 'Unknown ($deviceId)';
+
+            if (!_discoveredDevices.containsKey(deviceId)) {
+              _discoveredDevices[deviceId] = BleMeshDevice(
+                deviceId: deviceId,
+                deviceName: deviceName,
+                bluetoothDevice: result.device,
+              );
+              _localDeviceId ??= deviceId;
+              notifyListeners();
+
+              _connectToDevice(_discoveredDevices[deviceId]!);
+            }
+          }
+        },
+        onError: (e) {
+          debugPrint('BLE scan error: $e');
+        },
+      );
+    } catch (e, stack) {
+      debugPrint('Error during BLE discovery startup: $e');
+      debugPrint('Stack: $stack');
+    } finally {
+      _isScanning = false;
+    }
+  }
+
+  Future<void> _connectToDevice(BleMeshDevice meshDevice) async {
+    try {
+      meshDevice.state = BleMeshConnectionState.connecting;
+      notifyListeners();
+
+      await meshDevice.bluetoothDevice.connect(
+        timeout: const Duration(seconds: 10),
+      );
+
+      final services = await meshDevice.bluetoothDevice.discoverServices();
+      for (final service in services) {
+        if (service.uuid.toString() == serviceUuid) {
+          for (final characteristic in service.characteristics) {
+            if (characteristic.uuid.toString() == characteristicUuid) {
+              _writeCharacteristic = characteristic;
+
+              if (characteristic.properties.notify) {
+                await characteristic.setNotifyValue(true);
+                _notifySubscription?.cancel();
+                _notifySubscription = characteristic.lastValueStream.listen(
+                  (data) {
+                    _handleReceivedData(data);
+                  },
+                  onError: (e) {
+                    debugPrint('Notify error: $e');
+                  },
                 );
-              } catch (e) {
-                debugPrint('Error inviting peer: $e');
               }
             }
           }
-          notifyListeners();
-        },
-      );
+        }
+      }
 
-      _dataSubscription = _nearbyService!.dataReceivedSubscription(
-        callback: (data) {
-          try {
-            String? encodedPacket;
+      meshDevice.state = BleMeshConnectionState.connected;
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Error connecting to ${meshDevice.deviceId}: $e');
+      meshDevice.state = BleMeshConnectionState.disconnected;
+      notifyListeners();
+    }
+  }
 
-            if (data is Map) {
-              encodedPacket =
-                  data['message'] as String? ?? data['data'] as String?;
-            } else {
-              encodedPacket = data.toString();
-            }
+  void _handleReceivedData(List<int> data) {
+    try {
+      final encodedPacket = utf8.decode(data);
 
-            if (encodedPacket == null || encodedPacket.isEmpty) {
-              return;
-            }
+      if (encodedPacket.isEmpty) return;
 
-            final packet = MeshMessagePacket.decode(encodedPacket);
-            if (_seenPacketIds.contains(packet.id)) {
-              return;
-            }
-            _seenPacketIds.add(packet.id);
-            onMessageReceived?.call(packet);
-          } catch (e) {
-            debugPrint('Error parsing received P2P data: $e');
-          }
-        },
-      );
+      final packet = MeshMessagePacket.decode(encodedPacket);
+      if (_seenPacketIds.contains(packet.id)) return;
 
-      await _nearbyService!.startAdvertisingPeer();
-      await _nearbyService!.startBrowsingForPeers();
-    } catch (e, stack) {
-      debugPrint('Error during mesh discovery startup: $e');
-      debugPrint('Stack: $stack');
-    } finally {
-      _isStarting = false;
+      _seenPacketIds.add(packet.id);
+      onMessageReceived?.call(packet);
+    } catch (e) {
+      debugPrint('Error parsing received BLE data: $e');
     }
   }
 
   Future<void> stopMeshDiscovery() async {
     try {
-      await _stateSubscription?.cancel();
-      _stateSubscription = null;
-      await _dataSubscription?.cancel();
-      _dataSubscription = null;
+      await _scanSubscription?.cancel();
+      _scanSubscription = null;
+      await _notifySubscription?.cancel();
+      _notifySubscription = null;
 
-      if (_nearbyService != null && _isInitialized) {
-        await _nearbyService!.stopAdvertisingPeer();
-        await _nearbyService!.stopBrowsingForPeers();
+      await FlutterBluePlus.stopScan();
+
+      for (final device in _discoveredDevices.values) {
+        if (device.state == BleMeshConnectionState.connected) {
+          await device.bluetoothDevice.disconnect();
+        }
       }
     } catch (e) {
-      debugPrint('Error stopping advertising/browsing: $e');
+      debugPrint('Error stopping BLE discovery: $e');
     }
 
     _discoveredDevices.clear();
@@ -184,9 +238,7 @@ class BleMeshService extends ChangeNotifier {
   }
 
   Future<void> relayMeshMessage(MeshMessagePacket packet) async {
-    if (packet.hopCount >= maxHopCount) {
-      return;
-    }
+    if (packet.hopCount >= maxHopCount) return;
 
     await _broadcastPacket(
       MeshMessagePacket(
@@ -203,18 +255,23 @@ class BleMeshService extends ChangeNotifier {
   }
 
   Future<void> _broadcastPacket(MeshMessagePacket packet) async {
-    if (_nearbyService == null) {
-      debugPrint('NearbyService is null, cannot send packet');
+    if (_writeCharacteristic == null) {
+      debugPrint('No write characteristic available, cannot send packet');
       return;
     }
 
     final encodedPacket = packet.encode();
+    final data = utf8.encode(encodedPacket);
     _seenPacketIds.add(packet.id);
 
     for (final device in _discoveredDevices.values) {
-      if (device.state == SessionState.connected) {
+      if (device.state == BleMeshConnectionState.connected) {
         try {
-          await _nearbyService!.sendMessage(device.deviceId, encodedPacket);
+          await device.bluetoothDevice.writeCharacteristic(
+            _writeCharacteristic!.uuid,
+            data,
+            type: CharacteristicWriteType.withResponse,
+          );
         } catch (e) {
           debugPrint('Failed to send packet to ${device.deviceId}: $e');
         }
@@ -224,8 +281,9 @@ class BleMeshService extends ChangeNotifier {
 
   @override
   void dispose() {
-    _stateSubscription?.cancel();
-    _dataSubscription?.cancel();
+    _scanSubscription?.cancel();
+    _notifySubscription?.cancel();
+    FlutterBluePlus.stopScan();
     super.dispose();
   }
 }
