@@ -1,11 +1,11 @@
 {
-    "name": "ble_mesh_messenger",
-    "short_name": "ble_mesh_messenger",
+    "name": "wwchat",
+    "short_name": "wwchat",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
     "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "description": "Hybrid messenger with Firebase sync and BLE mesh delivery.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

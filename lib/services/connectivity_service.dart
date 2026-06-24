@@ -1,49 +1,71 @@
 import 'dart:async';
+
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/foundation.dart';
+
 import 'ble_mesh_service.dart';
 
 enum ConnectivityMode { internet, ble }
 
 class ConnectivityService with ChangeNotifier {
+  ConnectivityService({Connectivity? connectivity})
+    : _connectivity = connectivity ?? Connectivity() {
+    _init();
+  }
+
+  final Connectivity _connectivity;
+  final BleMeshService bleMeshService = BleMeshService();
+  StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
+
   ConnectivityMode _currentMode = ConnectivityMode.internet;
   bool _isInternetAvailable = true;
-  final BleMeshService bleMeshService = BleMeshService();
-  
+
   ConnectivityMode get mode => _currentMode;
   bool get isInternetAvailable => _isInternetAvailable;
 
-  ConnectivityService() {
-    _startHeartbeat();
+  Future<void> _init() async {
+    final initialState = await _connectivity.checkConnectivity();
+    await _updateFromResults(initialState);
+
+    _connectivitySubscription = _connectivity.onConnectivityChanged.listen(
+      _updateFromResults,
+    );
   }
 
-  void _startHeartbeat() {
-    Timer.periodic(const Duration(seconds: 5), (timer) {
-      _checkInternetStatus();
-    });
-  }
+  Future<void> _updateFromResults(List<ConnectivityResult> results) async {
+    final hadInternet = _isInternetAvailable;
+    _isInternetAvailable = results.any((result) => result != ConnectivityResult.none);
+    _currentMode = _isInternetAvailable ? ConnectivityMode.internet : ConnectivityMode.ble;
 
-  Future<void> _checkInternetStatus() async {
-    // In a real app, you'd ping your server or use connectivity_plus
-  }
-
-  Future<void> sendMessage(String text, String recipientId) async {
-    if (_isInternetAvailable) {
-      debugPrint("Routing message via INTERNET to $recipientId");
-    } else {
-      debugPrint("Routing message via BLE MESH to $recipientId");
-      await bleMeshService.sendMeshMessage(text);
+    if (hadInternet == _isInternetAvailable) {
+      notifyListeners();
+      return;
     }
+
+    if (_isInternetAvailable) {
+      await bleMeshService.stopMeshDiscovery();
+    }
+
+    notifyListeners();
   }
 
   Future<void> toggleInternet(bool available, {String? deviceName}) async {
     _isInternetAvailable = available;
-    _currentMode = _isInternetAvailable ? ConnectivityMode.internet : ConnectivityMode.ble;
-    
-    if (!_isInternetAvailable) {
-      await bleMeshService.startMeshDiscovery(deviceName: deviceName);
-    } else {
+    _currentMode = available ? ConnectivityMode.internet : ConnectivityMode.ble;
+
+    if (available) {
       await bleMeshService.stopMeshDiscovery();
+    } else {
+      await bleMeshService.startMeshDiscovery(deviceName: deviceName);
     }
+
     notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _connectivitySubscription?.cancel();
+    bleMeshService.dispose();
+    super.dispose();
   }
 }

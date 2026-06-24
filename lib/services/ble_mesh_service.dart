@@ -1,7 +1,10 @@
 import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_nearby_connections/flutter_nearby_connections.dart';
 import 'package:permission_handler/permission_handler.dart';
+
+import '../models/message.dart';
 
 class BleMeshService extends ChangeNotifier {
   NearbyService? _nearbyService;
@@ -9,18 +12,22 @@ class BleMeshService extends ChangeNotifier {
   StreamSubscription? _dataSubscription;
   bool _isInitialized = false;
   bool _isStarting = false;
+  String? _localDeviceId;
+  final Set<String> _seenPacketIds = <String>{};
 
   final Map<String, Device> _discoveredDevices = {};
 
-  List<Device> get discoveredDevices => _discoveredDevices.values.toList();
+  static const int maxHopCount = 2;
 
-  // Callback for when a message is received
-  void Function(String encryptedText, String senderId)? onMessageReceived;
+  List<Device> get discoveredDevices => _discoveredDevices.values.toList();
+  String? get localDeviceId => _localDeviceId;
+
+  void Function(MeshMessagePacket packet)? onMessageReceived;
 
   Future<void> initService(String deviceName) async {
     if (_isInitialized) return;
 
-    debugPrint("Initializing NearbyService with name: $deviceName");
+    debugPrint('Initializing NearbyService with name: $deviceName');
     try {
       _nearbyService = NearbyService();
       await _nearbyService!.init(
@@ -28,14 +35,14 @@ class BleMeshService extends ChangeNotifier {
         strategy: Strategy.P2P_CLUSTER,
         deviceName: deviceName,
         callback: (isRunning) {
-          debugPrint("NearbyService running state: $isRunning");
+          debugPrint('NearbyService running state: $isRunning');
         },
       );
       _isInitialized = true;
-      debugPrint("NearbyService initialized successfully");
+      debugPrint('NearbyService initialized successfully');
     } catch (e, stack) {
-      debugPrint("Error initializing NearbyService: $e");
-      debugPrint("Stack: $stack");
+      debugPrint('Error initializing NearbyService: $e');
+      debugPrint('Stack: $stack');
       _nearbyService = null;
       _isInitialized = false;
     }
@@ -43,7 +50,7 @@ class BleMeshService extends ChangeNotifier {
 
   Future<bool> _requestPermissions() async {
     try {
-      Map<Permission, PermissionStatus> statuses = await [
+      final statuses = await [
         Permission.location,
         Permission.bluetooth,
         Permission.bluetoothScan,
@@ -52,67 +59,60 @@ class BleMeshService extends ChangeNotifier {
         Permission.nearbyWifiDevices,
       ].request();
 
-      bool locationGranted = statuses[Permission.location]?.isGranted ?? false;
-      debugPrint("Permissions granted status: location=$locationGranted");
-      return locationGranted;
+      return (statuses[Permission.location]?.isGranted ?? false) &&
+          (statuses[Permission.bluetooth]?.isGranted ?? true) &&
+          (statuses[Permission.bluetoothScan]?.isGranted ?? true) &&
+          (statuses[Permission.bluetoothAdvertise]?.isGranted ?? true) &&
+          (statuses[Permission.bluetoothConnect]?.isGranted ?? true);
     } catch (e) {
-      debugPrint("Error requesting permissions: $e");
+      debugPrint('Error requesting permissions: $e');
       return false;
     }
   }
 
   Future<void> startMeshDiscovery({String? deviceName}) async {
     if (_isStarting) {
-      debugPrint("Mesh discovery is already starting, skipping...");
+      debugPrint('Mesh discovery is already starting, skipping...');
       return;
     }
     _isStarting = true;
-    
-    debugPrint("Starting P2P Mesh Discovery...");
-    
+
     try {
-      // Request permissions first
       final permGranted = await _requestPermissions();
       if (!permGranted) {
-        debugPrint("Location permission not granted, cannot start P2P discovery");
-        _isStarting = false;
+        debugPrint('Required permissions are not granted, cannot start P2P discovery');
         return;
       }
 
       if (!_isInitialized) {
-        await initService(deviceName ?? "User_${DateTime.now().millisecondsSinceEpoch % 1000}");
+        await initService(deviceName ?? 'User_${DateTime.now().millisecondsSinceEpoch % 1000}');
       }
 
       if (!_isInitialized || _nearbyService == null) {
-        debugPrint("NearbyService failed to initialize, aborting discovery");
-        _isStarting = false;
+        debugPrint('NearbyService failed to initialize, aborting discovery');
         return;
       }
 
       _discoveredDevices.clear();
       notifyListeners();
 
-      // Cancel existing subscriptions if any
       await _stateSubscription?.cancel();
       await _dataSubscription?.cancel();
 
-      // Subscribe to state changes
       _stateSubscription = _nearbyService!.stateChangedSubscription(
         callback: (devicesList) {
-          for (var device in devicesList) {
-            debugPrint("Device: ${device.deviceName} | State: ${device.state}");
+          for (final device in devicesList) {
             _discoveredDevices[device.deviceId] = device;
+            _localDeviceId ??= device.deviceId;
 
-            // Automatically connect/invite if not connected
             if (device.state == SessionState.notConnected) {
-              debugPrint("Auto-inviting device: ${device.deviceName}");
               try {
                 _nearbyService!.invitePeer(
                   deviceID: device.deviceId,
                   deviceName: device.deviceName,
                 );
               } catch (e) {
-                debugPrint("Error inviting peer: $e");
+                debugPrint('Error inviting peer: $e');
               }
             }
           }
@@ -120,77 +120,100 @@ class BleMeshService extends ChangeNotifier {
         },
       );
 
-      // Subscribe to data received
       _dataSubscription = _nearbyService!.dataReceivedSubscription(
         callback: (data) {
-          debugPrint("Data received raw: $data");
           try {
-            String? messageText;
-            String? senderId;
+            String? encodedPacket;
 
             if (data is Map) {
-              messageText = data['message'];
-              senderId = data['deviceId'] ?? data['senderDeviceId'];
+              encodedPacket = data['message'] as String? ?? data['data'] as String?;
             } else {
-              // Fallback: if it's some other format or a json encoded string
-              messageText = data.toString();
+              encodedPacket = data.toString();
             }
 
-            if (messageText != null && senderId != null) {
-              onMessageReceived?.call(messageText, senderId);
+            if (encodedPacket == null || encodedPacket.isEmpty) {
+              return;
             }
+
+            final packet = MeshMessagePacket.decode(encodedPacket);
+            if (_seenPacketIds.contains(packet.id)) {
+              return;
+            }
+            _seenPacketIds.add(packet.id);
+            onMessageReceived?.call(packet);
           } catch (e) {
-            debugPrint("Error parsing received P2P data: $e");
+            debugPrint('Error parsing received P2P data: $e');
           }
         },
       );
 
       await _nearbyService!.startAdvertisingPeer();
-      debugPrint("Started advertising peer");
       await _nearbyService!.startBrowsingForPeers();
-      debugPrint("Started browsing for peers");
     } catch (e, stack) {
-      debugPrint("Error during mesh discovery startup: $e");
-      debugPrint("Stack: $stack");
+      debugPrint('Error during mesh discovery startup: $e');
+      debugPrint('Stack: $stack');
     } finally {
       _isStarting = false;
     }
   }
 
   Future<void> stopMeshDiscovery() async {
-    debugPrint("Stopping P2P Mesh Discovery...");
     try {
       await _stateSubscription?.cancel();
       _stateSubscription = null;
       await _dataSubscription?.cancel();
       _dataSubscription = null;
-      
+
       if (_nearbyService != null && _isInitialized) {
         await _nearbyService!.stopAdvertisingPeer();
         await _nearbyService!.stopBrowsingForPeers();
       }
     } catch (e) {
-      debugPrint("Error stopping advertising/browsing: $e");
+      debugPrint('Error stopping advertising/browsing: $e');
     }
 
     _discoveredDevices.clear();
     notifyListeners();
   }
 
-  Future<void> sendMeshMessage(String text) async {
-    if (_nearbyService == null) {
-      debugPrint("NearbyService is null, cannot send message");
+  Future<void> sendMeshMessage(MeshMessagePacket packet) async {
+    await _broadcastPacket(packet);
+  }
+
+  Future<void> relayMeshMessage(MeshMessagePacket packet) async {
+    if (packet.hopCount >= maxHopCount) {
       return;
     }
-    
-    debugPrint("Broadcasting P2P Message to all connected nodes: $text");
-    for (var device in _discoveredDevices.values) {
+
+    await _broadcastPacket(
+      MeshMessagePacket(
+        id: packet.id,
+        senderUserId: packet.senderUserId,
+        senderMeshId: packet.senderMeshId,
+        recipientUserId: packet.recipientUserId,
+        conversationId: packet.conversationId,
+        encryptedText: packet.encryptedText,
+        hopCount: packet.hopCount + 1,
+        sentAt: packet.sentAt,
+      ),
+    );
+  }
+
+  Future<void> _broadcastPacket(MeshMessagePacket packet) async {
+    if (_nearbyService == null) {
+      debugPrint('NearbyService is null, cannot send packet');
+      return;
+    }
+
+    final encodedPacket = packet.encode();
+    _seenPacketIds.add(packet.id);
+
+    for (final device in _discoveredDevices.values) {
       if (device.state == SessionState.connected) {
-        debugPrint("Sending to connected peer: ${device.deviceName} (${device.deviceId})");
         try {
-          await _nearbyService!.sendMessage(device.deviceId, text);
+          await _nearbyService!.sendMessage(device.deviceId, encodedPacket);
         } catch (e) {
-          debugPrint("Failed to send message to ${device.deviceId}: $e");
+          debugPrint('Failed to send packet to ${device.deviceId}: $e');
         }
       }
     }

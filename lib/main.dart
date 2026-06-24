@@ -1,47 +1,31 @@
-import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:provider/provider.dart';
-import 'package:google_fonts/google_fonts.dart';
-import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'package:provider/provider.dart';
 
+import 'app_config.dart';
 import 'providers/chat_provider.dart';
-import 'services/connectivity_service.dart';
 import 'services/auth_service.dart';
-import 'ui/screens/contacts_screen.dart';
+import 'services/connectivity_service.dart';
 import 'ui/screens/auth_screen.dart';
+import 'ui/screens/contacts_screen.dart';
 
-class FirebaseWebConfig {
-  static const apiKey = String.fromEnvironment('FIREBASE_API_KEY');
-  static const authDomain = String.fromEnvironment('FIREBASE_AUTH_DOMAIN');
-  static const projectId = String.fromEnvironment('FIREBASE_PROJECT_ID');
-  static const storageBucket = String.fromEnvironment('FIREBASE_STORAGE_BUCKET');
-  static const messagingSenderId = String.fromEnvironment('FIREBASE_MESSAGING_SENDER_ID');
-  static const appId = String.fromEnvironment('FIREBASE_APP_ID');
-
-  static bool get isComplete {
-    return apiKey.isNotEmpty &&
-        authDomain.isNotEmpty &&
-        projectId.isNotEmpty &&
-        storageBucket.isNotEmpty &&
-        messagingSenderId.isNotEmpty &&
-        appId.isNotEmpty;
-  }
-}
-
-void main() async {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
   try {
     if (kIsWeb) {
-      if (FirebaseWebConfig.isComplete) {
+      if (AppConfig.isFirebaseWebConfigComplete) {
         await Firebase.initializeApp(
           options: const FirebaseOptions(
-            apiKey: FirebaseWebConfig.apiKey,
-            authDomain: FirebaseWebConfig.authDomain,
-            projectId: FirebaseWebConfig.projectId,
-            storageBucket: FirebaseWebConfig.storageBucket,
-            messagingSenderId: FirebaseWebConfig.messagingSenderId,
-            appId: FirebaseWebConfig.appId,
+            apiKey: AppConfig.firebaseApiKey,
+            authDomain: AppConfig.firebaseAuthDomain,
+            projectId: AppConfig.firebaseProjectId,
+            storageBucket: AppConfig.firebaseStorageBucket,
+            messagingSenderId: AppConfig.firebaseMessagingSenderId,
+            appId: AppConfig.firebaseAppId,
           ),
         );
       } else {
@@ -53,9 +37,9 @@ void main() async {
       await Firebase.initializeApp();
     }
   } catch (e) {
-    debugPrint("Firebase initialization failed: $e");
+    debugPrint('Firebase initialization failed: $e');
   }
-  
+
   runApp(
     MultiProvider(
       providers: [
@@ -79,17 +63,17 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const seedColor = Color(0xFF6750A4);
-    
+    const seedColor = Color(0xFF0E7490);
+
     return MaterialApp(
-      title: 'Mesh Messenger',
+      title: 'wwchat',
       theme: ThemeData(
         useMaterial3: true,
         colorScheme: ColorScheme.fromSeed(
           seedColor: seedColor,
           brightness: Brightness.light,
         ),
-        textTheme: GoogleFonts.interTextTheme(),
+        textTheme: GoogleFonts.ibmPlexSansTextTheme(),
       ),
       darkTheme: ThemeData(
         useMaterial3: true,
@@ -97,7 +81,7 @@ class MyApp extends StatelessWidget {
           seedColor: seedColor,
           brightness: Brightness.dark,
         ),
-        textTheme: GoogleFonts.interTextTheme(ThemeData.dark().textTheme),
+        textTheme: GoogleFonts.ibmPlexSansTextTheme(ThemeData.dark().textTheme),
       ),
       themeMode: ThemeMode.system,
       home: const AuthWrapper(),
@@ -111,16 +95,22 @@ class AuthWrapper extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final authService = context.watch<AuthService>();
-    
+
     return StreamBuilder<User?>(
       stream: authService.authStateChanges,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Scaffold(body: Center(child: CircularProgressIndicator()));
         }
+
+        if (!authService.isAvailable) {
+          return const AuthScreen();
+        }
+
         if (snapshot.hasData) {
           return const ContactsScreen();
         }
+
         return const AuthScreen();
       },
     );

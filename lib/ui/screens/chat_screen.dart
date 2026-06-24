@@ -1,13 +1,15 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 import 'package:flutter_nearby_connections/flutter_nearby_connections.dart' hide Message;
+import 'package:provider/provider.dart';
+
+import '../../models/message.dart';
 import '../../providers/chat_provider.dart';
 import '../../services/connectivity_service.dart';
-import '../../models/message.dart';
 
 class ChatScreen extends StatefulWidget {
-  final Contact contact;
   const ChatScreen({super.key, required this.contact});
+
+  final Contact contact;
 
   @override
   State<ChatScreen> createState() => _ChatScreenState();
@@ -31,23 +33,24 @@ class _ChatScreenState extends State<ChatScreen> {
     super.dispose();
   }
 
-  void _sendMessage() {
-    if (_controller.text.isEmpty) return;
-    
+  Future<void> _sendMessage() async {
+    final text = _controller.text.trim();
+    if (text.isEmpty) return;
+
     final chatProvider = context.read<ChatProvider>();
     final connectivity = context.read<ConnectivityService>();
-    
-    final source = connectivity.isInternetAvailable 
-        ? MessageSource.internet 
+
+    final source = connectivity.isInternetAvailable
+        ? MessageSource.internet
         : MessageSource.ble;
-        
-    chatProvider.addMessage(
-      text: _controller.text, 
-      recipientId: widget.contact.id, 
-      isMe: true, 
-      source: source
+
+    await chatProvider.addMessage(
+      text: text,
+      recipientId: widget.contact.id,
+      isMe: true,
+      source: source,
     );
-    
+
     _controller.clear();
   }
 
@@ -61,20 +64,20 @@ class _ChatScreenState extends State<ChatScreen> {
           builder: (context, child) {
             final devices = bleService.discoveredDevices;
             return Padding(
-              padding: const EdgeInsets.all(16.0),
+              padding: const EdgeInsets.all(16),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    "Nearby Mesh Nodes",
+                    'Nearby mesh nodes',
                     style: Theme.of(context).textTheme.titleLarge,
                   ),
                   const SizedBox(height: 8),
                   if (devices.isEmpty)
                     const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 24.0),
-                      child: Center(child: Text("Scanning for nodes...")),
+                      padding: EdgeInsets.symmetric(vertical: 24),
+                      child: Center(child: Text('Scanning for nodes...')),
                     )
                   else
                     Flexible(
@@ -83,16 +86,17 @@ class _ChatScreenState extends State<ChatScreen> {
                         itemCount: devices.length,
                         itemBuilder: (context, index) {
                           final device = devices[index];
-                          String stateText = "";
-                          Color stateColor = Colors.grey;
+                          String stateText;
+                          Color stateColor;
+
                           if (device.state == SessionState.connected) {
-                            stateText = "Connected";
+                            stateText = 'Connected';
                             stateColor = Colors.green;
                           } else if (device.state == SessionState.connecting) {
-                            stateText = "Connecting...";
+                            stateText = 'Connecting...';
                             stateColor = Colors.orange;
                           } else {
-                            stateText = "Not Connected";
+                            stateText = 'Not connected';
                             stateColor = Colors.grey;
                           }
 
@@ -145,7 +149,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 ),
                 const SizedBox(width: 4),
                 Text(
-                  connectivity.isInternetAvailable ? "Online" : "Mesh Mode",
+                  connectivity.isInternetAvailable ? 'Online sync' : 'Mesh mode',
                   style: theme.textTheme.labelSmall,
                 ),
               ],
@@ -173,20 +177,23 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
           ),
           Padding(
-            padding: const EdgeInsets.all(8.0),
+            padding: const EdgeInsets.all(8),
             child: Row(
               children: [
                 Expanded(
                   child: TextField(
                     controller: _controller,
                     decoration: InputDecoration(
-                      hintText: "Type a message...",
+                      hintText: connectivity.isInternetAvailable
+                          ? 'Type a message...'
+                          : 'Send through nearby mesh...',
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(24),
                       ),
                       filled: true,
                       contentPadding: const EdgeInsets.symmetric(horizontal: 16),
                     ),
+                    onSubmitted: (_) => _sendMessage(),
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -204,9 +211,9 @@ class _ChatScreenState extends State<ChatScreen> {
 }
 
 class MessageBubble extends StatelessWidget {
-  final Message message;
-
   const MessageBubble({super.key, required this.message});
+
+  final Message message;
 
   @override
   Widget build(BuildContext context) {
@@ -219,9 +226,7 @@ class MessageBubble extends StatelessWidget {
         margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
         padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
         decoration: BoxDecoration(
-          color: isMe 
-              ? theme.colorScheme.primaryContainer 
-              : theme.colorScheme.secondaryContainer,
+          color: isMe ? theme.colorScheme.primaryContainer : theme.colorScheme.secondaryContainer,
           borderRadius: BorderRadius.circular(16).copyWith(
             bottomRight: isMe ? const Radius.circular(0) : const Radius.circular(16),
             bottomLeft: !isMe ? const Radius.circular(0) : const Radius.circular(16),
@@ -234,8 +239,8 @@ class MessageBubble extends StatelessWidget {
             Text(
               message.text,
               style: theme.textTheme.bodyLarge?.copyWith(
-                color: isMe 
-                    ? theme.colorScheme.onPrimaryContainer 
+                color: isMe
+                    ? theme.colorScheme.onPrimaryContainer
                     : theme.colorScheme.onSecondaryContainer,
               ),
             ),
@@ -244,16 +249,14 @@ class MessageBubble extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  "${message.timestamp.hour}:${message.timestamp.minute.toString().padLeft(2, '0')}",
+                  '${message.timestamp.hour}:${message.timestamp.minute.toString().padLeft(2, '0')}',
                   style: theme.textTheme.labelSmall?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
                   ),
                 ),
                 const SizedBox(width: 4),
                 Icon(
-                  message.source == MessageSource.internet 
-                      ? Icons.public 
-                      : Icons.bluetooth,
+                  message.source == MessageSource.internet ? Icons.public : Icons.bluetooth,
                   size: 12,
                   color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
                 ),

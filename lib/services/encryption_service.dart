@@ -1,15 +1,22 @@
-import 'package:cryptography/cryptography.dart';
 import 'dart:convert';
+
+import 'package:cryptography/cryptography.dart';
 import 'package:flutter/foundation.dart';
+
+import '../app_config.dart';
 
 class EncryptionService {
   final algorithm = AesGcm.with256bits();
 
-  // In a real app, these keys would be generated per-session or derived from DH
-  // For this prototype, we'll use a simplified version
-  Future<SecretKey> deriveKey(String password) async {
+  Future<SecretKey> deriveConversationKey(String conversationId) async {
+    AppConfig.debugPrintMissingEncryptionSecretWarning();
+
+    final configuredSecret = AppConfig.hasEncryptionSecret
+        ? AppConfig.encryptionSecret
+        : 'wwchat-development-only-secret';
+
     final sink = Sha256().newHashSink();
-    sink.add(utf8.encode(password));
+    sink.add(utf8.encode('$configuredSecret::$conversationId'));
     sink.close();
     final hash = await sink.hash();
     return SecretKey(hash.bytes);
@@ -36,8 +43,8 @@ class EncryptionService {
       );
       return utf8.decode(clearText);
     } catch (e) {
-      debugPrint("Decryption error: $e");
-      return "[Decryption Error]";
+      debugPrint('Decryption error: $e');
+      return '[Decryption Error]';
     }
   }
 }
